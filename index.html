@@ -14264,8 +14264,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // === 保活与通知控制逻辑 ===
 
     let keepAliveAudio = null;
-    let keepAliveAttempts = 0;
-    const MAX_KEEPALIVE_ATTEMPTS = 3;
 
     // 更新通知权限状态
     function updateNotificationStatus() {
@@ -14308,7 +14306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // 启动保活（改进版）
+    // 启动保活
     function startKeepAlive() {
         if (keepAliveAudio && !keepAliveAudio.paused && keepAliveAudio.readyState >= 2) {
             alert('保活已在运行');
@@ -14321,7 +14319,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 keepAliveAudio.load();
                 keepAliveAudio = null;
             }
-            keepAliveAttempts = 0;
             keepAliveAudio = new Audio();
             keepAliveAudio.src = 'https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3';
             keepAliveAudio.loop = true;
@@ -14330,42 +14327,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             keepAliveAudio.play().then(() => {
                 console.log('✅ 保活已启动');
                 updateKeepAliveStatus();
-                if (window._keepAliveNotified !== true) {
-                    window._keepAliveNotified = true;
-                    if ('Notification' in window && Notification.permission === 'granted') {
-                        new Notification('🔋 保活已启动', {
-                            body: '后台通知更可靠！',
-                            icon: 'data:image/svg+xml,🔋'
-                        });
-                    }
-                }
             }).catch(err => {
                 console.warn('⚠️ 启动被拦截:', err);
                 const statusEl = document.getElementById('keepAliveStatus');
                 if (statusEl) {
                     statusEl.textContent = '⏸️ 点击页面激活';
                     statusEl.style.color = '#ff9800';
-                }
-            });
-            keepAliveAudio.addEventListener('error', (e) => {
-                console.error('❌ 加载失败:', e);
-                if (keepAliveAttempts < MAX_KEEPALIVE_ATTEMPTS) {
-                    keepAliveAttempts++;
-                    const backupUrls = [
-                        'https://www.soundjay.com/misc/sounds/bell-ringing-06.mp3',
-                        'https://www.soundjay.com/misc/sounds/bell-ringing-07.mp3'
-                    ];
-                    if (keepAliveAudio) {
-                        keepAliveAudio.src = backupUrls[keepAliveAttempts - 1] || keepAliveAudio.src;
-                        keepAliveAudio.load();
-                        keepAliveAudio.play().catch(() => {});
-                    }
-                } else {
-                    const statusEl = document.getElementById('keepAliveStatus');
-                    if (statusEl) {
-                        statusEl.textContent = '❌ 加载失败';
-                        statusEl.style.color = '#f44336';
-                    }
                 }
             });
         } catch (err) {
@@ -14381,7 +14348,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             keepAliveAudio.src = '';
             keepAliveAudio.load();
             keepAliveAudio = null;
-            window._keepAliveNotified = false;
             updateKeepAliveStatus();
         }
     }
@@ -14430,8 +14396,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             keepAliveAudio.play().then(() => {
                 updateKeepAliveStatus();
             }).catch(() => {});
-        } else if (!keepAliveAudio && keepAliveAttempts > 0) {
-            startKeepAlive();
         }
     }, { once: false });
 
