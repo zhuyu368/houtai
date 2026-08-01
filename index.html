@@ -13121,7 +13121,7 @@ const delay = minDelay + Math.random() * (maxDelay - minDelay);
     }
     
     showNotification(message) {
-        // 1. 原网页内提示（保留）
+        // 网页内提示（保留）
         const existing = document.querySelector('.notification');
         if (existing) existing.remove();
         const notification = document.createElement('div');
@@ -13130,13 +13130,19 @@ const delay = minDelay + Math.random() * (maxDelay - minDelay);
         document.body.appendChild(notification);
         setTimeout(() => { if (notification.parentNode) notification.remove(); }, 3000);
 
-        // 2. 系统通知（只在后台时弹出）
+        // 系统通知（只在后台时弹出）
         if ('Notification' in window && Notification.permission === 'granted') {
-            if (document.visibilityState === 'hidden') {
-                new Notification('💌 梦角爱人', {
-                    body: message,
-                    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">💌</text></svg>'
-                });
+            if (document.visibilityState === 'hidden' || !document.hasFocus()) {
+                try {
+                    new Notification('💌 梦角爱人', {
+                        body: message,
+                        icon: 'data:image/svg+xml,💌',
+                        tag: Date.now().toString(),
+                        requireInteraction: true
+                    });
+                } catch (e) {
+                    console.warn('通知发送失败:', e);
+                }
             }
         }
     }
@@ -14257,10 +14263,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // === 保活与通知控制逻辑 ===
 
-    // 全局保活音频对象
     let keepAliveAudio = null;
+    let keepAliveAttempts = 0;
+    const MAX_KEEPALIVE_ATTEMPTS = 3;
 
-    // 更新通知权限状态显示
+    // 更新通知权限状态
     function updateNotificationStatus() {
         const statusEl = document.getElementById('notificationStatus');
         if (!statusEl) return;
@@ -14285,64 +14292,96 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // 更新保活状态显示
+    // 更新保活状态
     function updateKeepAliveStatus() {
         const statusEl = document.getElementById('keepAliveStatus');
         if (!statusEl) return;
-        if (keepAliveAudio && !keepAliveAudio.paused) {
-            statusEl.textContent = '✅ 运行中 (循环播放静音音频)';
+        if (keepAliveAudio && !keepAliveAudio.paused && keepAliveAudio.readyState >= 2) {
+            statusEl.textContent = '✅ 运行中';
             statusEl.style.color = '#4caf50';
+        } else if (keepAliveAudio && keepAliveAudio.paused) {
+            statusEl.textContent = '⏸️ 暂停 (点击页面恢复)';
+            statusEl.style.color = '#ff9800';
         } else {
             statusEl.textContent = '⏸️ 未启动';
             statusEl.style.color = '#ff9800';
         }
     }
 
-    // 启动保活音频
+    // 启动保活（改进版）
     function startKeepAlive() {
-        if (keepAliveAudio && !keepAliveAudio.paused) {
-            alert('保活音频已在运行中');
+        if (keepAliveAudio && !keepAliveAudio.paused && keepAliveAudio.readyState >= 2) {
+            alert('保活已在运行');
             return;
         }
         try {
             if (keepAliveAudio) {
-                keepAliveAudio.play().then(() => {
-                    updateKeepAliveStatus();
-                }).catch(err => {
-                    console.log('播放失败:', err);
-                    alert('播放失败，请点击页面任意位置后重试');
-                });
-                return;
+                keepAliveAudio.pause();
+                keepAliveAudio.src = '';
+                keepAliveAudio.load();
+                keepAliveAudio = null;
             }
-            // 创建新音频（使用内联base64静音音频，避免外部依赖）
+            keepAliveAttempts = 0;
             keepAliveAudio = new Audio();
-            // 1秒静音 mp3（base64）
-            keepAliveAudio.src = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAADhgCenp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6e////////////////////////////////////////////////////////////////AAAAAExhdmM1OC41NAAAAAAAAAAAAAAA//tQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAEAAAGkAAAAIAAANIAAAAQAAAAAAAAAAAA//sQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+            keepAliveAudio.src = 'https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3';
             keepAliveAudio.loop = true;
             keepAliveAudio.volume = 0.01;
+            keepAliveAudio.load();
             keepAliveAudio.play().then(() => {
+                console.log('✅ 保活已启动');
                 updateKeepAliveStatus();
-                if ('Notification' in window && Notification.permission === 'granted') {
-                    new Notification('🔋 保活已启动', {
-                        body: '后台消息通知将更可靠！',
-                        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🔋</text></svg>'
-                    });
+                if (window._keepAliveNotified !== true) {
+                    window._keepAliveNotified = true;
+                    if ('Notification' in window && Notification.permission === 'granted') {
+                        new Notification('🔋 保活已启动', {
+                            body: '后台通知更可靠！',
+                            icon: 'data:image/svg+xml,🔋'
+                        });
+                    }
                 }
             }).catch(err => {
-                console.log('保活启动失败:', err);
-                alert('⚠️ 自动播放被拦截，请点击页面任意位置后重试');
+                console.warn('⚠️ 启动被拦截:', err);
+                const statusEl = document.getElementById('keepAliveStatus');
+                if (statusEl) {
+                    statusEl.textContent = '⏸️ 点击页面激活';
+                    statusEl.style.color = '#ff9800';
+                }
+            });
+            keepAliveAudio.addEventListener('error', (e) => {
+                console.error('❌ 加载失败:', e);
+                if (keepAliveAttempts < MAX_KEEPALIVE_ATTEMPTS) {
+                    keepAliveAttempts++;
+                    const backupUrls = [
+                        'https://www.soundjay.com/misc/sounds/bell-ringing-06.mp3',
+                        'https://www.soundjay.com/misc/sounds/bell-ringing-07.mp3'
+                    ];
+                    if (keepAliveAudio) {
+                        keepAliveAudio.src = backupUrls[keepAliveAttempts - 1] || keepAliveAudio.src;
+                        keepAliveAudio.load();
+                        keepAliveAudio.play().catch(() => {});
+                    }
+                } else {
+                    const statusEl = document.getElementById('keepAliveStatus');
+                    if (statusEl) {
+                        statusEl.textContent = '❌ 加载失败';
+                        statusEl.style.color = '#f44336';
+                    }
+                }
             });
         } catch (err) {
-            console.log('保活启动失败:', err);
-            alert('保活启动失败: ' + err.message);
+            console.error('❌ 启动异常:', err);
         }
     }
 
-    // 停止保活音频
+    // 停止保活
     function stopKeepAlive() {
         if (keepAliveAudio) {
             keepAliveAudio.pause();
             keepAliveAudio.currentTime = 0;
+            keepAliveAudio.src = '';
+            keepAliveAudio.load();
+            keepAliveAudio = null;
+            window._keepAliveNotified = false;
             updateKeepAliveStatus();
         }
     }
@@ -14350,20 +14389,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 请求通知权限
     function requestNotificationPermission() {
         if (!('Notification' in window)) {
-            alert('此浏览器不支持系统通知');
+            alert('浏览器不支持系统通知');
             return;
         }
         if (Notification.permission === 'granted') {
             updateNotificationStatus();
-            alert('通知权限已授权！');
+            alert('权限已授权');
             return;
         }
         Notification.requestPermission().then(perm => {
             updateNotificationStatus();
             if (perm === 'granted') {
-                new Notification('✅ 通知权限已开启', {
-                    body: '现在对方发消息时会在锁屏弹出通知',
-                    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">✅</text></svg>'
+                new Notification('✅ 权限已开启', {
+                    body: '锁屏可弹出通知',
+                    icon: 'data:image/svg+xml,✅'
                 });
             }
         });
@@ -14372,26 +14411,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 发送测试通知
     function sendTestNotification() {
         if (!('Notification' in window)) {
-            alert('此浏览器不支持系统通知');
+            alert('浏览器不支持');
             return;
         }
         if (Notification.permission !== 'granted') {
-            alert('⚠️ 通知权限未授权，请先点击"请求通知权限"');
+            alert('权限未授权');
             return;
         }
         new Notification('📩 测试通知', {
-            body: '这是来自梦角爱人的测试消息！',
-            icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">💌</text></svg>'
+            body: '来自梦角爱人的测试消息！',
+            icon: 'data:image/svg+xml,💌'
         });
     }
 
-    // 页面点击激活保活（解决自动播放限制）
-    document.addEventListener('click', () => {
-        if (keepAliveAudio && keepAliveAudio.paused) {
-            keepAliveAudio.play().catch(() => {});
-            updateKeepAliveStatus();
+    // 页面点击激活保活（关键）
+    document.addEventListener('click', function() {
+        if (keepAliveAudio && keepAliveAudio.paused && keepAliveAudio.readyState >= 2) {
+            keepAliveAudio.play().then(() => {
+                updateKeepAliveStatus();
+            }).catch(() => {});
+        } else if (!keepAliveAudio && keepAliveAttempts > 0) {
+            startKeepAlive();
         }
-    });
+    }, { once: false });
 
     // === 保活与通知按钮绑定 ===
     updateNotificationStatus();
